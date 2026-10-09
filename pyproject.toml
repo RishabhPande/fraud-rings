@@ -1,0 +1,11 @@
+[project]
+name = "fraud-rings"
+version = "0.1.0"
+description = "Synthetic fraud-ring generation and graph-based detection"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{name = "Rishabh Pande"}]
+license = {text = "MIT"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
