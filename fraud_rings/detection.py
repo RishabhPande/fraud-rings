@@ -1,10 +1,15 @@
-"""Shared-attribute linking + connected-component ring detection.
+"""Shared-attribute linking + connected-component ring detection,
+plus temporal burst detection.
 
-Detection in two passes:
+Detection in three passes:
 1. link_entities: edge between two entities when they share a device_id,
    phone, exact address, or near-duplicate SSN (Hamming distance <= 1).
 2. find_rings: union-find connected components over those edges, filtered
    to clusters of size >= 2 with recorded shared-attribute evidence.
+3. detect_bursts: sliding time window over application timestamps; windows
+   with >= min_count applications are bursts. Catches rings that dodge
+   attribute linking (unique devices/phones per member) but still apply
+   in a tight burst — the classic synthetic-identity spray pattern.
 evaluate() scores recovered clusters against the planted labels.
 """
 
@@ -12,6 +17,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import timedelta
 
 from fraud_rings.generator import Entity
 
@@ -130,6 +136,65 @@ def find_rings(entities: list[Entity], min_size: int = 2) -> list[RingCluster]:
         clusters.append(RingCluster(members=sorted(members),
                                     evidence=dict(evidence)))
     return sorted(clusters, key=lambda c: c.size, reverse=True)
+
+
+@dataclass
+class Burst:
+    """A time window with an anomalous application count."""
+    start: object          # datetime of first application in the burst
+    end: object            # datetime of last application in the burst
+    member_ids: list[str] = field(default_factory=list)
+
+    @property
+    def size(self) -> int:
+        return len(self.member_ids)
+
+    def summary(self) -> str:
+        span = self.end - self.start
+        return (f"[burst] {self.start:%Y-%m-%d %H:%M} -> "
+                f"{self.end:%Y-%m-%d %H:%M} "
+                f"({span} span) {self.size} applications")
+
+
+def detect_bursts(entities: list[Entity], window_hours: float = 4.0,
+                  min_count: int = 6) -> list[Burst]:
+    """Flag time windows with an anomalous number of applications.
+
+    Two-pointer sliding window over sorted application timestamps (O(n log n)
+    for the sort, O(n) for the scan); overlapping candidate windows are merged.
+    Entities without a timestamp are ignored.
+
+    This is a recall-oriented tripwire, not a verdict: a burst says "look
+    here", which is exactly how velocity rules work in production — they
+    route to review, and attribute linking decides.
+    """
+    pts = sorted((e.applied_at, e.id) for e in entities
+                 if e.applied_at is not None)
+    if len(pts) < min_count:
+        return []
+
+    window = timedelta(hours=window_hours)
+    candidates: list[tuple[object, object, list[str]]] = []
+    j = 0
+    for i in range(len(pts)):
+        j = max(j, i)
+        while j + 1 < len(pts) and pts[j + 1][0] - pts[i][0] <= window:
+            j += 1
+        if j - i + 1 >= min_count:
+            candidates.append((pts[i][0], pts[j][0],
+                               [p[1] for p in pts[i:j + 1]]))
+
+    candidates.sort(key=lambda c: c[0])
+    merged: list[tuple[object, object, list[str]]] = []
+    for start, end, members in candidates:
+        if merged and start <= merged[-1][1]:
+            prev_start, prev_end, prev_members = merged.pop()
+            merged.append((prev_start, max(prev_end, end),
+                           sorted(set(prev_members) | set(members))))
+        else:
+            merged.append((start, end, members))
+
+    return [Burst(start=s, end=e, member_ids=m) for s, e, m in merged]
 
 
 @dataclass

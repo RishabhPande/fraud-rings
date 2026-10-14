@@ -1,8 +1,10 @@
 import pytest
 
 from fraud_rings import (
+    Burst,
     Entity,
     RingGenerator,
+    detect_bursts,
     evaluate,
     find_rings,
     link_entities,
@@ -97,3 +99,71 @@ def test_empty_and_singleton_inputs():
     assert find_rings([e]) == []
     m = evaluate([e], [])
     assert m.precision == 0.0 and m.recall == 0.0
+
+
+# -- temporal burst detection --------------------------------------------
+
+def _ring_ids_in_burst(entities, burst):
+    by_id = {e.id: e for e in entities}
+    return {by_id[i].ring_id for i in burst.member_ids
+            if by_id[i].ring_id is not None}
+
+
+def test_bursts_recover_planted_rings():
+    entities = make(seed=21, n=500, n_rings=3)
+    bursts = detect_bursts(entities)
+    assert len(bursts) >= 3
+    # every planted ring has a burst covering >= half its members
+    ring_members = {}
+    for e in entities:
+        if e.ring_id is not None:
+            ring_members.setdefault(e.ring_id, set()).add(e.id)
+    for rid, members in ring_members.items():
+        assert any(
+            len(members & set(b.member_ids)) >= len(members) / 2
+            for b in bursts
+        ), f"ring {rid} has no covering burst"
+
+
+def test_no_bursts_in_uniform_benign_traffic():
+    entities = RingGenerator(seed=22).generate(n=300, n_rings=0)
+    assert detect_bursts(entities) == []
+
+
+def test_bursts_catch_attribute_clean_ring():
+    # adversarial ring: every attribute unique, so link-based detection
+    # sees nothing — but all 8 apply within one hour.
+    from datetime import datetime, timedelta
+    base = datetime(2026, 3, 1, 12, 0, 0)
+    entities = [
+        Entity(id=f"clean-{i}", name=f"Person {i}",
+               ssn=f"{100000000 + i * 7919}", phone=f"555{i:07d}",
+               email=f"p{i}@x.com", address=f"{i} Unique Way",
+               device_id=f"dev-clean-{i}", ip=f"10.0.0.{i}",
+               applied_at=base + timedelta(minutes=i * 7))
+        for i in range(8)
+    ]
+    assert find_rings(entities) == []          # linking sees nothing
+    bursts = detect_bursts(entities)
+    assert len(bursts) == 1                    # burst catches it
+    assert bursts[0].size == 8
+    assert "[burst]" in bursts[0].summary()
+
+
+def test_burst_detection_handles_missing_timestamps():
+    e1 = Entity(id="a", name="A", ssn="1", phone="1", email="a@x.com",
+                address="1 Main", device_id="d1", ip="1.1.1.1")
+    e2 = Entity(id="b", name="B", ssn="2", phone="2", email="b@x.com",
+                address="2 Main", device_id="d2", ip="2.2.2.2")
+    assert detect_bursts([e1, e2]) == []
+    assert detect_bursts([]) == []
+
+
+def test_generator_timestamps_are_deterministic():
+    a = RingGenerator(seed=77).generate(n=120, n_rings=2)
+    b = RingGenerator(seed=77).generate(n=120, n_rings=2)
+    assert [e.applied_at for e in a] == [e.applied_at for e in b]
+    # ring members cluster in time, benign spread out
+    fraud_ts = sorted(e.applied_at for e in a if e.is_fraud)
+    span = (fraud_ts[-1] - fraud_ts[0]).total_seconds() / 3600
+    assert span < 24 * 90  # sanity: within the generation window

@@ -45,10 +45,32 @@ print(evaluate(entities, clusters).summary())
 3. **Score** (`evaluate`) — precision/recall against the planted labels, plus
    how many planted rings were recovered (≥50% of members in one cluster).
 
+## Temporal burst detection
+
+Real rings spray applications in a tight window before going quiet. Every
+generated entity now carries an `applied_at` timestamp — benign traffic
+spread uniformly over 90 days, ring members clustered inside a 2-hour
+burst. `detect_bursts()` runs a two-pointer sliding window (4h default,
+≥6 applications) and merges overlapping hits.
+
+It's a recall-oriented tripwire, not a verdict — exactly how velocity
+rules work in production: the burst routes to review, attribute linking
+decides. See `examples/burst_example.py` for an adversarial ring with
+fully unique attributes per member: linking finds nothing, the burst
+catches all 8.
+
+```python
+from fraud_rings import RingGenerator, detect_bursts
+
+entities = RingGenerator(seed=42).generate(n=500, n_rings=3)
+for b in detect_bursts(entities):
+    print(b.summary())
+```
+
 ## Roadmap
 
+- [x] Temporal burst detection (many applications in a short window)
 - [ ] Louvain community detection for rings that share *weak* signals across many attributes
-- [ ] Temporal burst detection (many applications in a short window)
 - [ ] GNN-based ring scorer (GraphSAGE over the entity graph)
 - [ ] Larger, noisier attribute pools + adversarial ring variants that dodge naive linking
 

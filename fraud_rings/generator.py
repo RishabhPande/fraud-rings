@@ -15,6 +15,14 @@ from __future__ import annotations
 import random
 import string
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+
+# Fixed epoch so generated timestamps are deterministic per seed.
+EPOCH = datetime(2026, 1, 1)
+# Benign applications spread uniformly over this many days...
+BENIGN_SPREAD_DAYS = 90
+# ...while a planted ring's members all apply within this burst window.
+RING_BURST_HOURS = 2.0
 
 
 @dataclass
@@ -29,6 +37,7 @@ class Entity:
     ip: str
     is_fraud: bool = False
     ring_id: int | None = None
+    applied_at: datetime | None = None   # application timestamp
 
 
 _FIRST = ["James", "Maria", "Robert", "Linda", "Michael", "Sarah", "David",
@@ -103,15 +112,22 @@ class RingGenerator:
             address=self._address(),
             device_id=self._device(),
             ip=self._ip(),
+            applied_at=EPOCH + timedelta(
+                days=self.rng.uniform(0, BENIGN_SPREAD_DAYS)),
         )
 
     def _plant_ring(self, ring_id: int, size: int, start_idx: int) -> list[Entity]:
         """A ring shares a small device pool, a phone pool, address variants
-        of one location, and SSNs that differ by a single digit."""
+        of one location, and SSNs that differ by a single digit.
+
+        Ring members also apply in a tight burst — real rings submit many
+        applications in a short window before the trail goes cold."""
         base_ssn = self._ssn()
         base_address = self._address()
         devices = [self._device() for _ in range(max(1, size // 3))]
         phones = [self._phone() for _ in range(max(1, size // 2))]
+        burst_start = EPOCH + timedelta(
+            days=self.rng.uniform(0, BENIGN_SPREAD_DAYS))
         members = []
         for j in range(size):
             name = self._name()
@@ -129,6 +145,8 @@ class RingGenerator:
                 ip=self._ip(),
                 is_fraud=True,
                 ring_id=ring_id,
+                applied_at=burst_start + timedelta(
+                    hours=self.rng.uniform(0, RING_BURST_HOURS)),
             ))
         return members
 
