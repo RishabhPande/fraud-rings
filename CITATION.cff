@@ -1,0 +1,8 @@
+cff-version: 1.2.0
+title: "fraud-rings"
+authors:
+  - given-names: Rishabh
+    family-names: Pande
+    orcid: "https://orcid.org/0009-0004-1901-7109"
+repository-code: "https://github.com/RishabhPande/fraud-rings"
+abstract: "Synthetic identity-fraud ring generator plus graph-based detection in pure Python."
