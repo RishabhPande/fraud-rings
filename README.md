@@ -38,14 +38,41 @@ print(evaluate(entities, clusters).summary())
 ## How detection works
 
 1. **Link** (`fraud_rings/detection.py::link_entities`): entities get an edge
-   when they share a `device_id`, `phone`, exact `address`, or a
+   when they share a `device_id`, `phone`, a normalized `address`, or a
    near-duplicate SSN (Hamming distance ≤ 1, found via 8-of-9 digit mask
-   buckets so it stays O(n)).
+   buckets so it stays O(n)). Address matching ignores street-type spelling
+   ("Ave" = "Avenue") and treats a missing unit as a variant of the same
+   address, but never links two different units in one building (see
+   below).
 2. **Cluster** (`find_rings`): union-find connected components over those
    edges, each returned with its shared-attribute evidence
    (`shared device x4, near-duplicate SSN x9, …`).
 3. **Score** (`evaluate`): precision/recall against the planted labels, plus
    how many planted rings were recovered (≥50% of members in one cluster).
+
+### Address normalization
+
+![Exact vs normalized address matching on rings that share only address variants](docs/rings.png)
+
+Rings often reuse one address with cosmetic changes. `link_entities` compares
+addresses after lowercasing, stripping punctuation and reducing street types
+("Street" to "St"), then applies three rules:
+
+| Pair | Result |
+|------|--------|
+| same street, same unit (or both without one) | `shared address` |
+| same street, one side has no unit, building has exactly one known unit | `address variant` |
+| same street, one side has no unit, two or more known units | no link (it could be any of them) |
+| same street, two different units | no link |
+
+These rules keep neighbours in an apartment building apart, including through
+a unitless record: it never chains two units together. The price is recall.
+On the demo data (rings that share only address variants, seed 42), 2 of 3
+rings are recovered and recall is 0.70, versus 0/3 and 0.61 with exact
+matching; the ring whose variants span several units stays split. Pass
+`normalize_addresses=False` to `link_entities` or `find_rings` for the old
+exact-match behaviour. Regenerate the figure with
+`python examples/plot_rings.py` (needs matplotlib).
 
 ## Temporal burst detection
 

@@ -19,6 +19,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import timedelta
 
+from fraud_rings.address import normalize_address
 from fraud_rings.generator import Entity
 
 
@@ -33,13 +34,23 @@ class Edge:
     reasons: list[str] = field(default_factory=list)
 
 
-def link_entities(entities: list[Entity]) -> list[Edge]:
+def link_entities(entities: list[Entity],
+                  normalize_addresses: bool = True) -> list[Edge]:
     """Build links between entities sharing identifying attributes.
+
+    With ``normalize_addresses`` (default) addresses are compared after
+    street-type normalization ("Street" == "St"). An address without a unit
+    links to the same street with a unit ("address variant") only when that
+    building has exactly one known unit in the input. Different units never
+    link, directly or through a unitless record. Pass False for the original
+    exact-match behaviour (lowercase, stripped).
 
     Indexes each attribute once (O(n)) then emits edges per shared bucket,
     avoiding the O(n^2) pairwise scan.
     """
     buckets: dict[str, list[str]] = defaultdict(list)
+
+    building: dict[str, list[tuple[str, str | None]]] = {}
 
     def add(key: str, entity_id: str):
         buckets[key].append(entity_id)
@@ -47,7 +58,12 @@ def link_entities(entities: list[Entity]) -> list[Edge]:
     for e in entities:
         add(f"device:{e.device_id}", e.id)
         add(f"phone:{e.phone}", e.id)
-        add(f"addr:{e.address.strip().lower()}", e.id)
+        if normalize_addresses:
+            na = normalize_address(e.address)
+            add(f"addr:{na.street}|{na.unit or ''}", e.id)
+            building.setdefault(na.street, []).append((e.id, na.unit))
+        else:
+            add(f"addr:{e.address.strip().lower()}", e.id)
 
     # Near-duplicate SSNs: bucket by every 8-of-9 digit mask so any pair
     # with Hamming distance <= 1 collides in at least one bucket.
@@ -80,6 +96,24 @@ def link_entities(entities: list[Entity]) -> list[Edge]:
                 if reason not in edge_reasons[pair]:
                     edge_reasons[pair].append(reason)
 
+    # Same street, one side without a unit: possibly the same household that
+    # left the unit off. That only holds when the building has a single known
+    # unit. If two or more different units appear, a unitless record could
+    # belong to any of them, and linking it would chain different households
+    # together, so it links to none. This depends only on the set of units in
+    # the input, never on record order.
+    for members in building.values():
+        units = {u for _, u in members if u is not None}
+        if len(units) != 1:
+            continue
+        bare = [i for i, u in members if u is None]
+        unit = [i for i, u in members if u is not None]
+        for a in bare:
+            for b in unit:
+                pair = tuple(sorted((a, b)))
+                if "address variant" not in edge_reasons[pair]:
+                    edge_reasons[pair].append("address variant")
+
     return [Edge(a=p[0], b=p[1], reasons=r) for p, r in edge_reasons.items()]
 
 
@@ -110,8 +144,9 @@ class RingCluster:
         return len(self.members)
 
 
-def find_rings(entities: list[Entity], min_size: int = 2) -> list[RingCluster]:
-    edges = link_entities(entities)
+def find_rings(entities: list[Entity], min_size: int = 2,
+               normalize_addresses: bool = True) -> list[RingCluster]:
+    edges = link_entities(entities, normalize_addresses=normalize_addresses)
     uf = _UnionFind()
     for e in entities:
         uf.find(e.id)
