@@ -61,13 +61,17 @@ addresses after lowercasing, stripping punctuation and reducing street types
 | Pair | Result |
 |------|--------|
 | same street, same unit (or both without one) | `shared address` |
-| same street, one side has no unit | `address variant` |
+| same street, one side has no unit, building has exactly one known unit | `address variant` |
+| same street, one side has no unit, two or more known units | no link (it could be any of them) |
 | same street, two different units | no link |
 
-The last rule keeps neighbours in an apartment building apart. One caveat: an
-application with no unit can bridge two different units, because components
-are transitive. Pass `normalize_addresses=False` to `link_entities` or
-`find_rings` for the old exact-match behaviour. Regenerate the figure with
+These rules keep neighbours in an apartment building apart, including through
+a unitless record: it never chains two units together. The price is recall.
+On the demo data (rings that share only address variants, seed 42), 2 of 3
+rings are recovered and recall is 0.70, versus 0/3 and 0.61 with exact
+matching; the ring whose variants span several units stays split. Pass
+`normalize_addresses=False` to `link_entities` or `find_rings` for the old
+exact-match behaviour. Regenerate the figure with
 `python examples/plot_rings.py` (needs matplotlib).
 
 ## Temporal burst detection
