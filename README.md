@@ -38,14 +38,37 @@ print(evaluate(entities, clusters).summary())
 ## How detection works
 
 1. **Link** (`fraud_rings/detection.py::link_entities`): entities get an edge
-   when they share a `device_id`, `phone`, exact `address`, or a
+   when they share a `device_id`, `phone`, a normalized `address`, or a
    near-duplicate SSN (Hamming distance ≤ 1, found via 8-of-9 digit mask
-   buckets so it stays O(n)).
+   buckets so it stays O(n)). Address matching ignores street-type spelling
+   ("Ave" = "Avenue") and treats a missing unit as a variant of the same
+   address, but never links two different units in one building (see
+   below).
 2. **Cluster** (`find_rings`): union-find connected components over those
    edges, each returned with its shared-attribute evidence
    (`shared device x4, near-duplicate SSN x9, …`).
 3. **Score** (`evaluate`): precision/recall against the planted labels, plus
    how many planted rings were recovered (≥50% of members in one cluster).
+
+### Address normalization
+
+![Exact vs normalized address matching on rings that share only address variants](docs/rings.png)
+
+Rings often reuse one address with cosmetic changes. `link_entities` compares
+addresses after lowercasing, stripping punctuation and reducing street types
+("Street" to "St"), then applies three rules:
+
+| Pair | Result |
+|------|--------|
+| same street, same unit (or both without one) | `shared address` |
+| same street, one side has no unit | `address variant` |
+| same street, two different units | no link |
+
+The last rule keeps neighbours in an apartment building apart. One caveat: an
+application with no unit can bridge two different units, because components
+are transitive. Pass `normalize_addresses=False` to `link_entities` or
+`find_rings` for the old exact-match behaviour. Regenerate the figure with
+`python examples/plot_rings.py` (needs matplotlib).
 
 ## Temporal burst detection
 
