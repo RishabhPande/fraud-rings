@@ -15,8 +15,10 @@ So normalization is split in two:
 Linking rules built on that (see ``link_entities``):
 
 - same street AND same unit (or both without a unit): "shared address"
-- same street, one side has no unit: "address variant" (the applicant may
-  just have left the unit off)
+- same street, one side has no unit: "address variant", but only if the
+  building has exactly one known unit in the input (the applicant may
+  just have left the unit off). With two or more units, a unitless record
+  could be any of them, so it links to none
 - same street, two different units: no link
 """
 
