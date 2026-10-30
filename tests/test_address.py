@@ -45,9 +45,37 @@ def test_same_unit_written_differently_links():
                    "12 Elm Street, Salem #3") == ["shared address"]
 
 
-def test_missing_unit_is_an_address_variant():
+def test_missing_unit_is_an_address_variant_when_one_unit_known():
     assert reasons("12 Elm St, Salem",
                    "12 Elm St, Salem Apt 3") == ["address variant"]
+
+
+def test_unitless_record_does_not_bridge_two_units():
+    # Apt 1 and Apt 2 are different households. A unitless record in the
+    # same building could be either, so it must not chain them together.
+    ents = [ent(1, "12 Elm St, Salem Apt 1"), ent(2, "12 Elm St, Salem"),
+            ent(3, "12 Elm St, Salem Apt 2")]
+    assert link_entities(ents) == []
+    assert find_rings(ents) == []
+
+
+def test_unitless_links_when_building_has_one_known_unit():
+    ents = [ent(1, "12 Elm St, Salem Apt 1"), ent(2, "12 Elm St, Salem"),
+            ent(3, "12 Elm Street, Salem #1")]
+    assert len(find_rings(ents)) == 1
+    assert find_rings(ents)[0].size == 3
+
+
+def test_clusters_do_not_depend_on_input_order():
+    base = [ent(1, "12 Elm St, Salem Apt 1"), ent(2, "12 Elm St, Salem"),
+            ent(3, "12 Elm St, Salem Apt 2"), ent(4, "9 Oak Ave, Salem"),
+            ent(5, "9 Oak Avenue, Salem Apt 4"), ent(6, "9 Oak Ave, Salem")]
+    expected = sorted(tuple(c.members) for c in find_rings(base))
+    rnd = random.Random(0)
+    for _ in range(20):
+        shuffled = base[:]
+        rnd.shuffle(shuffled)
+        assert sorted(tuple(c.members) for c in find_rings(shuffled)) == expected
 
 
 def test_different_units_in_one_building_do_not_link():
@@ -89,13 +117,17 @@ def _address_only_dataset(seed=42):
             if e.is_fraud else e for e in ents]
 
 
-def test_rings_recovered_by_address_alone():
+def test_address_only_rings_improve_without_false_positives():
+    # Seed 42, rings that share only address variants. Rings whose variants
+    # span several apartment units are only partly linked: that is the cost
+    # of never bridging two units through a unitless record.
     ents = _address_only_dataset()
     before = evaluate(ents, find_rings(ents, normalize_addresses=False))
     after = evaluate(ents, find_rings(ents))
     assert before.rings_recovered == 0
-    assert after.rings_recovered == 3
-    assert after.precision == 1.0 and after.recall == 1.0
+    assert after.rings_recovered == 2
+    assert after.recall > before.recall
+    assert after.precision == 1.0
 
 
 def test_normalization_adds_no_false_positives_on_benign_traffic():
