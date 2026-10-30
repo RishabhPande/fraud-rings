@@ -39,9 +39,10 @@ def link_entities(entities: list[Entity],
     """Build links between entities sharing identifying attributes.
 
     With ``normalize_addresses`` (default) addresses are compared after
-    street-type normalization ("Street" == "St"), and an address without a
-    unit links to the same street with a unit ("address variant"). Two
-    different units in one building never link. Pass False for the original
+    street-type normalization ("Street" == "St"). An address without a unit
+    links to the same street with a unit ("address variant") only when that
+    building has exactly one known unit in the input. Different units never
+    link, directly or through a unitless record. Pass False for the original
     exact-match behaviour (lowercase, stripped).
 
     Indexes each attribute once (O(n)) then emits edges per shared bucket,
@@ -96,8 +97,15 @@ def link_entities(entities: list[Entity],
                     edge_reasons[pair].append(reason)
 
     # Same street, one side without a unit: possibly the same household that
-    # left the unit off. Two different explicit units are distinct households.
+    # left the unit off. That only holds when the building has a single known
+    # unit. If two or more different units appear, a unitless record could
+    # belong to any of them, and linking it would chain different households
+    # together, so it links to none. This depends only on the set of units in
+    # the input, never on record order.
     for members in building.values():
+        units = {u for _, u in members if u is not None}
+        if len(units) != 1:
+            continue
         bare = [i for i, u in members if u is None]
         unit = [i for i, u in members if u is not None]
         for a in bare:
@@ -268,4 +276,4 @@ def evaluate(entities: list[Entity],
         recall=recall,
         rings_recovered=recovered,
         n_rings_planted=len(ring_members),
-    )
+                )
