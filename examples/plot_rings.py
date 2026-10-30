@@ -92,10 +92,10 @@ def main(out: str = "docs/rings.png") -> str:
     draw(axes[1], ents, pos, True, "Normalized address match (after)")
     fig.suptitle("Three planted rings that share only address variants "
                  "(synthetic data, seed 42)", x=.01, ha="left", fontsize=11)
-    fig.text(.01, .01, "solid orange: same address after normalization   "
-             "dotted: same street, one side has no unit   "
-             "colour = true planted ring, dark dots = planted members not linked to anyone", fontsize=8, color="#666")
-    fig.tight_layout(rect=(0, .03, 1, .94))
+    fig.text(.01, .012, "orange: same address after normalization (dotted: unitless record in a one-unit building)\n"
+             "colour = true planted ring; dark dots = planted members not linked to anyone; "
+             "rings split across several units stay split by design", fontsize=8, color="#666")
+    fig.tight_layout(rect=(0, .06, 1, .94))
     fig.savefig(out)
     return out
 
