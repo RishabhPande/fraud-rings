@@ -276,4 +276,4 @@ def evaluate(entities: list[Entity],
         recall=recall,
         rings_recovered=recovered,
         n_rings_planted=len(ring_members),
-                )
+    )
