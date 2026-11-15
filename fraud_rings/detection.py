@@ -51,11 +51,14 @@ def link_entities(entities: list[Entity],
     buckets: dict[str, list[str]] = defaultdict(list)
 
     building: dict[str, list[tuple[str, str | None]]] = {}
+    by_id: dict[str, Entity] = {}
 
     def add(key: str, entity_id: str):
         buckets[key].append(entity_id)
 
     for e in entities:
+        # Keep the first record, matching the previous list-search semantics.
+        by_id.setdefault(e.id, e)
         add(f"device:{e.device_id}", e.id)
         add(f"phone:{e.phone}", e.id)
         if normalize_addresses:
@@ -82,8 +85,8 @@ def link_entities(entities: list[Entity],
                 if kind == "ssnmask":
                     # confirm actual Hamming distance (mask collision on
                     # distinct positions is possible across buckets)
-                    ea = next(e for e in entities if e.id == pair[0])
-                    eb = next(e for e in entities if e.id == pair[1])
+                    ea = by_id[pair[0]]
+                    eb = by_id[pair[1]]
                     if _ssn_hamming(ea.ssn, eb.ssn) > 1:
                         continue
                     reason = "near-duplicate SSN"
@@ -276,4 +279,4 @@ def evaluate(entities: list[Entity],
         recall=recall,
         rings_recovered=recovered,
         n_rings_planted=len(ring_members),
-    )
+)
