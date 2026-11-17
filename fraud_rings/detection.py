@@ -212,27 +212,31 @@ def detect_bursts(entities: list[Entity], window_hours: float = 4.0,
         return []
 
     window = timedelta(hours=window_hours)
-    candidates: list[tuple[object, object, list[str]]] = []
+    # Retain index ranges, not a copy of every overlapping member window.
+    # Dense traffic can have O(n) candidate windows of O(n) members each.
+    merged: list[tuple[int, int, bool]] = []
     j = 0
     for i in range(len(pts)):
         j = max(j, i)
         while j + 1 < len(pts) and pts[j + 1][0] - pts[i][0] <= window:
             j += 1
         if j - i + 1 >= min_count:
-            candidates.append((pts[i][0], pts[j][0],
-                               [p[1] for p in pts[i:j + 1]]))
+            if merged and pts[i][0] <= pts[merged[-1][1]][0]:
+                start, end, _ = merged[-1]
+                merged[-1] = (start, max(end, j), True)
+            else:
+                merged.append((i, j, False))
 
-    candidates.sort(key=lambda c: c[0])
-    merged: list[tuple[object, object, list[str]]] = []
-    for start, end, members in candidates:
-        if merged and start <= merged[-1][1]:
-            prev_start, prev_end, prev_members = merged.pop()
-            merged.append((prev_start, max(prev_end, end),
-                           sorted(set(prev_members) | set(members))))
-        else:
-            merged.append((start, end, members))
-
-    return [Burst(start=s, end=e, member_ids=m) for s, e, m in merged]
+    bursts = []
+    for start, end, combined in merged:
+        members = [pts[k][1] for k in range(start, end + 1)]
+        # Preserve the original ordering/deduplication convention: a single
+        # candidate retains time order; merged candidates use sorted IDs.
+        if combined:
+            members = sorted(set(members))
+        bursts.append(Burst(start=pts[start][0], end=pts[end][0],
+                            member_ids=members))
+    return bursts
 
 
 @dataclass
