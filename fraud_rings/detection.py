@@ -161,18 +161,21 @@ def find_rings(entities: list[Entity], min_size: int = 2,
     for e in entities:
         groups[uf.find(e.id)].append(e.id)
 
+    # Every edge's endpoints already share a component after union. Count
+    # its evidence once instead of rescanning all edges for every cluster.
+    evidence_by_root: dict[str, dict[str, int]] = {}
+    for edge in edge_by_pair.values():
+        root = uf.find(edge.a)
+        evidence = evidence_by_root.setdefault(root, defaultdict(int))
+        for reason in edge.reasons:
+            evidence[reason] += 1
+
     clusters = []
-    for members in groups.values():
+    for root, members in groups.items():
         if len(members) < min_size:
             continue
-        evidence: dict[str, int] = defaultdict(int)
-        member_set = set(members)
-        for (a, b), edge in edge_by_pair.items():
-            if a in member_set and b in member_set:
-                for reason in edge.reasons:
-                    evidence[reason] += 1
         clusters.append(RingCluster(members=sorted(members),
-                                    evidence=dict(evidence)))
+                                    evidence=dict(evidence_by_root.get(root, {}))))
     return sorted(clusters, key=lambda c: c.size, reverse=True)
 
 
