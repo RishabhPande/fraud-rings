@@ -46,7 +46,10 @@ print(evaluate(entities, clusters).summary())
    below).
 2. **Cluster** (`find_rings`): union-find connected components over those
    edges, each returned with its shared-attribute evidence
-   (`shared device x4, near-duplicate SSN x9, …`).
+   (`shared device x4, near-duplicate SSN x9, …`). Evidence is accumulated
+   once per linked pair, rather than rescanning all edges for each component.
+   This keeps many separate small rings from multiplying the evidence work;
+   dense shared-attribute buckets can still produce quadratically many edges.
 3. **Score** (`evaluate`): precision/recall against the planted labels, plus
    how many planted rings were recovered (≥50% of members in one cluster).
 
